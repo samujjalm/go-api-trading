@@ -4,7 +4,7 @@ A small but production-shaped Go service: password auth with JWT access tokens a
 
 Only Docker is required. Go itself runs inside containers.
 
-**Visual explainer:** open [`docs/order-matching.html`](docs/order-matching.html) in a browser. It has an interactive order book where you can send orders and watch each matching step, plus the path an order takes through the service.
+**Visual explainer:** open [`docs/order-matching.html`](docs/order-matching.html) in a browser. It has an interactive order book where you can send orders and watch each matching step, plus the path an order takes through the service. [`docs/go-features.html`](docs/go-features.html) covers the Go features the service uses: goroutines per request, an animated lock timeline, channels and graceful shutdown, context, retries, and the concurrency test.
 
 ## Quick start
 

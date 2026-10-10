@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Go Field Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: an annotated engineering notebook. Each section pairs a diagram or
+   live timeline with the exact code from the service that it explains.
+   Shares its token system with docs/order-matching.html. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #e9edf3;
+  --line: #d5dce6;
+  --fg: #17202b;
+  --muted: #5a6779;
+  --accent: #2a55c9;
+  --accent-soft: rgba(42, 85, 201, 0.12);
+  --go: #007d9c;          /* Go's own cyan, darkened for contrast on white */
+  --go-soft: rgba(0, 125, 156, 0.14);
+  --ok: #0c7f62;
+  --ok-soft: rgba(12, 127, 98, 0.14);
+  --bad: #c03f2b;
+  --bad-soft: rgba(192, 63, 43, 0.13);
+  --warn: #9a6a00;
+  --warn-soft: rgba(154, 106, 0, 0.14);
+
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --step--1: 0.8125rem;
+  --step-0: 0.9375rem;
+  --step-1: 1.125rem;
+  --step-2: 1.5rem;
+  --step-3: clamp(1.9rem, 4vw, 2.6rem);
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --surface: #161d27; --surface-2: #1e2834; --line: #2b3746;
+    --fg: #e3e9f1; --muted: #93a1b3; --accent: #86a2ff; --accent-soft: rgba(134, 162, 255, 0.16);
+    --go: #4fc6e0; --go-soft: rgba(79, 198, 224, 0.16);
+    --ok: #3cc39a; --ok-soft: rgba(60, 195, 154, 0.16); --bad: #ff7d66; --bad-soft: rgba(255, 125, 102, 0.15);
+    --warn: #e2b44a; --warn-soft: rgba(226, 180, 74, 0.16);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --surface: #161d27; --surface-2: #1e2834; --line: #2b3746;
+  --fg: #e3e9f1; --muted: #93a1b3; --accent: #86a2ff; --accent-soft: rgba(134, 162, 255, 0.16);
+  --go: #4fc6e0; --go-soft: rgba(79, 198, 224, 0.16);
+  --ok: #3cc39a; --ok-soft: rgba(60, 195, 154, 0.16); --bad: #ff7d66; --bad-soft: rgba(255, 125, 102, 0.15);
+  --warn: #e2b44a; --warn-soft: rgba(226, 180, 74, 0.16);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 400 var(--step-0)/1.6 var(--font-body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 64px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: var(--step-3); letter-spacing: -0.01em; }
+h2 { font-size: var(--step-2); }
+h3 { font-size: var(--step-1); }
+p { margin: 0; }
+code { font-family: var(--font-data); font-size: 0.88em; background: var(--surface-2); padding: 0.05em 0.35em; border-radius: 3px; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.eyebrow { font-family: var(--font-data); font-size: var(--step--1); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+.prose { display: grid; gap: 10px; max-width: 68ch; }
+.prose p { color: var(--muted); }
+.prose b { color: var(--fg); font-weight: 600; }
+
+header { display: grid; gap: 12px; max-width: 74ch; }
+header .lede { color: var(--muted); font-size: var(--step-1); line-height: 1.5; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px; }
+nav.toc a {
+  font-family: var(--font-data); font-size: var(--step--1); text-decoration: none;
+  color: var(--fg); border: 1px solid var(--line); background: var(--surface);
+  padding: 4px 10px; border-radius: 3px;
+}
+nav.toc a:hover { border-color: var(--go); color: var(--go); }
+
+section { display: grid; gap: 20px; scroll-margin-top: 16px; }
+.sec-head { display: grid; gap: 6px; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.panel-body { padding: 16px; display: grid; gap: 14px; min-width: 0; }
+
+.two { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 880px) { .two { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- code ---------- */
+figure.code { margin: 0; display: grid; gap: 0; min-width: 0; }
+figure.code figcaption {
+  font-family: var(--font-data); font-size: 0.74rem; color: var(--muted);
+  padding: 7px 12px; border: 1px solid var(--line); border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0; background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+pre {
+  margin: 0; font: 400 0.8rem/1.6 var(--font-data); tab-size: 4;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius);
+  padding: 12px 14px; overflow-x: auto; color: var(--fg);
+}
+pre .c { color: var(--muted); font-style: italic; }
+pre .s { color: var(--ok); }
+pre .k { color: var(--accent); }
+pre .g { color: var(--go); font-weight: 600; }
+pre mark { background: var(--warn-soft); color: inherit; border-radius: 2px; padding: 0 1px; }
+
+/* ---------- request fan-out diagram ---------- */
+.fanout { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.3fr) auto minmax(0, 1fr); gap: 10px; align-items: center; }
+@media (max-width: 760px) { .fanout { grid-template-columns: minmax(0, 1fr); } .fanout .arrow { transform: rotate(90deg); justify-self: center; } }
+.node { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; background: var(--surface); display: grid; gap: 4px; }
+.node b { font-family: var(--font-display); font-size: var(--step-1); font-weight: 600; }
+.node span { font-size: var(--step--1); color: var(--muted); }
+.node.go { border-color: var(--go); }
+.gstack { display: grid; gap: 4px; }
+.gstack .g {
+  font-family: var(--font-data); font-size: 0.76rem; padding: 4px 8px; border-radius: 3px;
+  background: var(--go-soft); color: var(--fg); border-left: 3px solid var(--go);
+  display: flex; justify-content: space-between; gap: 8px;
+}
+.gstack .g em { font-style: normal; color: var(--muted); }
+.arrow { font-family: var(--font-data); color: var(--muted); font-size: 1.1rem; }
+
+table { border-collapse: collapse; width: 100%; font-size: var(--step--1); }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-data); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td:first-child { white-space: nowrap; }
+.tbl { overflow-x: auto; }
+
+/* ---------- lock timeline ---------- */
+.modes { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.modes input { position: absolute; opacity: 0; pointer-events: none; }
+.modes label { padding: 6px 12px; font: 600 var(--step--1) var(--font-body); cursor: pointer; color: var(--muted); background: var(--surface); }
+.modes label + input + label { border-left: 1px solid var(--line); }
+.modes input:checked + label { background: var(--fg); color: var(--surface); }
+.modes input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
+button {
+  font: 600 var(--step--1) var(--font-body); border-radius: 4px; padding: 6px 12px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+}
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+.timeline { overflow-x: auto; }
+.tl-inner { min-width: 620px; display: grid; gap: 6px; }
+.lane { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); gap: 12px; align-items: center; }
+.lane-label { font-size: var(--step--1); line-height: 1.3; display: grid; }
+.lane-label b { font-family: var(--font-data); font-weight: 500; font-size: 0.76rem; }
+.lane-label span { color: var(--muted); font-size: 0.74rem; }
+.track { position: relative; height: 26px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.seg { position: absolute; top: 3px; bottom: 3px; border-radius: 2px; }
+.seg.go { background: var(--go); opacity: 0.55; }
+.seg.wait { background: repeating-linear-gradient(135deg, var(--warn-soft) 0 6px, transparent 6px 11px); border: 1px solid var(--warn); }
+.seg.tx { background: var(--accent); }
+.seg.read { background: var(--ok); opacity: 0.75; }
+.seg.tx.clash { background: var(--bad); }
+.seg.tx .lbl, .seg.read .lbl { position: absolute; inset: 0; display: flex; align-items: center; padding-left: 6px; font: 600 0.66rem var(--font-data); color: var(--surface); white-space: nowrap; overflow: hidden; }
+.cover { position: absolute; top: 0; bottom: 0; right: 0; background: var(--surface-2); }
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); opacity: 0.6; }
+.axis { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); gap: 12px; }
+.ticks { position: relative; height: 18px; font: 0.68rem var(--font-data); color: var(--muted); }
+.ticks span { position: absolute; transform: translateX(-50%); }
+.ticks span:first-child { transform: none; }
+.tl-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--step--1); color: var(--muted); align-items: center; }
+.sw { display: inline-block; width: 22px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
+.sw.go { background: var(--go); opacity: 0.55; }
+.sw.wait { background: repeating-linear-gradient(135deg, var(--warn-soft) 0 4px, transparent 4px 7px); border: 1px solid var(--warn); }
+.sw.tx { background: var(--accent); }
+.sw.read { background: var(--ok); opacity: 0.75; }
+.sw.clash { background: var(--bad); }
+.verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 10px; }
+.metric { border-top: 2px solid var(--line); padding-top: 8px; display: grid; gap: 2px; }
+.metric b { font: 600 var(--step-2) var(--font-data); font-variant-numeric: tabular-nums; }
+.metric span { font-size: var(--step--1); color: var(--muted); }
+.metric.bad { border-color: var(--bad); }
+.metric.bad b { color: var(--bad); }
+.metric.ok { border-color: var(--ok); }
+.note { font-size: var(--step--1); padding: 10px 12px; border-radius: 4px; background: var(--surface-2); }
+.note.bad { background: var(--bad-soft); }
+.note.warn { background: var(--warn-soft); }
+.note.ok { background: var(--ok-soft); }
+
+/* ---------- step lists (true sequences only) ---------- */
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: s; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 2.2rem minmax(0, 1fr); gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: var(--step--1); }
+ol.steps li::before { content: counter(s, decimal-leading-zero); font-family: var(--font-data); color: var(--go); font-weight: 600; }
+ol.steps li span { color: var(--muted); }
+ol.steps li b { color: var(--fg); font-weight: 600; }
+
+/* ---------- context tree ---------- */
+.tree { display: grid; gap: 6px; font-size: var(--step--1); }
+.tree .n { display: grid; gap: 2px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+.tree .n code { background: none; padding: 0; color: var(--go); font-weight: 500; }
+.tree .n span { color: var(--muted); }
+.tree .kids { display: grid; gap: 6px; padding-left: 18px; border-left: 2px solid var(--go-soft); margin-left: 10px; }
+
+/* ---------- retry timeline ---------- */
+.retry { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+.retry .blk { padding: 7px 10px; border-radius: 4px; font-size: var(--step--1); display: grid; gap: 2px; flex: 1 1 8rem; min-width: 0; }
+.retry .blk b { font-family: var(--font-data); font-size: 0.74rem; font-weight: 600; }
+.retry .blk.a { background: var(--bad-soft); }
+.retry .blk.w { background: var(--warn-soft); }
+.retry .blk.ok { background: var(--ok-soft); }
+
+/* ---------- worker fan-in ---------- */
+.workers { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+@media (max-width: 560px) { .workers { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.worker { font: 0.7rem var(--font-data); text-align: center; padding: 6px 2px; border-radius: 3px; background: var(--go-soft); border-top: 3px solid var(--go); }
+.funnel { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: 8px; }
+.funnel .node b { font-family: var(--font-data); font-size: 0.82rem; }
+
+/* ---------- feature cards ---------- */
+.cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); }
+.card { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card .meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; align-items: baseline; border-top: 2px solid var(--fg); padding-top: 10px; }
+.card .meta .where { font-family: var(--font-data); font-size: 0.72rem; color: var(--go); overflow-wrap: anywhere; }
+.card p { color: var(--muted); font-size: var(--step--1); }
+
+footer { color: var(--muted); font-size: var(--step--1); border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">go-api-trading · docs</span>
+  <h1>Go Field Guide</h1>
+  <p class="lede">The Go features this trading service relies on, each shown with the code that uses it. It starts with concurrency: how thousands of simultaneous orders stay correct when every request runs on its own goroutine.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#goroutines">Goroutines per request</a>
+    <a href="#locks">The book lock, live</a>
+    <a href="#shutdown">Channels &amp; graceful shutdown</a>
+    <a href="#context">context.Context</a>
+    <a href="#retry">select &amp; retries</a>
+    <a href="#testing">Testing concurrency</a>
+    <a href="#language">Language features</a>
+  </nav>
+</header>
+
+<!-- ======================= 1. goroutines ======================= -->
+<section id="goroutines" aria-labelledby="g-title">
+  <div class="sec-head">
+    <span class="eyebrow">Concurrency · 1</span>
+    <h2 id="g-title">Every connection gets its own goroutine</h2>
+  </div>
+  <div class="prose">
+    <p>The service never writes <code>go</code> to handle a request. <b><code>net/http</code> starts a goroutine for every accepted connection</b>, so a hundred clients placing orders at once means a hundred handlers running in parallel across all CPU cores. A goroutine starts with a few kilobytes of stack, which is why this is cheap enough to do per connection.</p>
+    <p>That makes the important question <b>what those goroutines share</b>. Anything two goroutines can write at the same time needs synchronisation. This service avoids the problem by design: everything shared is either read-only or built for concurrent use, and everything mutable lives inside one request.</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-body">
+      <div class="fanout">
+        <div class="node"><b>Clients</b><span>browsers, bots, other services; many connections at once</span></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="gstack" aria-label="One goroutine per connection">
+          <div class="g">goroutine · POST /orders <em>AAPL</em></div>
+          <div class="g">goroutine · POST /orders <em>AAPL</em></div>
+          <div class="g">goroutine · POST /orders <em>MSFT</em></div>
+          <div class="g">goroutine · GET /markets/AAPL/book <em>read</em></div>
+          <div class="g">goroutine · POST /auth/login <em>bcrypt</em></div>
+        </div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="node go"><b>pgxpool.Pool</b><span>lends each goroutine its own DB connection; defaults to max(4, CPU count) connections, extra callers wait their turn</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="panel tbl">
+      <div class="panel-head"><h3>Shared between goroutines</h3><span class="eyebrow">why it's safe</span></div>
+      <table>
+        <tbody>
+          <tr><td><code>*http.Server</code> handlers, services</td><td>Built once in <code>main</code>, never mutated afterwards. Read-only data needs no lock.</td></tr>
+          <tr><td><code>*pgxpool.Pool</code></td><td>Documented as safe for concurrent use. Each caller gets a different connection.</td></tr>
+          <tr><td><code>*slog.Logger</code></td><td>Safe for concurrent use; <code>With(...)</code> returns a new logger instead of modifying one.</td></tr>
+          <tr><td>JWT secret, config</td><td>Immutable after startup.</td></tr>
+          <tr><td>dummy password hash</td><td><code>sync.OnceValue</code> computes it on first use, exactly once, even if many logins race.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel tbl">
+      <div class="panel-head"><h3>Owned by one request</h3><span class="eyebrow">no lock needed</span></div>
+      <table>
+        <tbody>
+          <tr><td><code>domain.Order</code> being placed</td><td>Created inside the handler, never handed to another goroutine.</td></tr>
+          <tr><td><code>balanceSet</code> map</td><td>A plain map is fine: only this transaction's goroutine touches it. Go maps are <em>not</em> safe for concurrent writes.</td></tr>
+          <tr><td><code>pgx.Tx</code></td><td>One connection, used by one goroutine for the length of the transaction.</td></tr>
+          <tr><td>request <code>context.Context</code></td><td>Carries the request ID, logger and user ID for this request only.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <figure class="code">
+    <figcaption>internal/app/auth_service.go: the one piece of lazily initialised shared state</figcaption>
+<pre class="go">dummyHash: sync.OnceValue(func() string {
+	h, _ := hasher.Hash("timing-equaliser-password")
+	return h
+}),</pre>
+  </figure>
+</section>
+
+<!-- ======================= 2. lock timeline ======================= -->
+<section id="locks" aria-labelledby="l-title">
+  <div class="sec-head">
+    <span class="eyebrow">Concurrency · 2</span>
+    <h2 id="l-title">Six orders arrive together: who waits?</h2>
+  </div>
+  <div class="prose">
+    <p>Matching is the one place where requests really do compete: two buyers must not both fill against the same 100 shares. Below, six goroutines start within a few moments of each other. Switch the locking strategy and replay to see who runs in parallel, who queues, and what goes wrong without a lock.</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="modes" role="radiogroup" aria-label="Locking strategy">
+        <input type="radio" name="mode" id="mode-sym" value="symbol" checked><label for="mode-sym">Lock per symbol (the service)</label>
+        <input type="radio" name="mode" id="mode-global" value="global"><label for="mode-global">One global lock</label>
+        <input type="radio" name="mode" id="mode-none" value="none"><label for="mode-none">No lock</label>
+      </div>
+      <div class="controls"><button type="button" id="replay">Replay</button></div>
+    </div>
+    <div class="panel-body">
+      <div class="timeline"><div class="tl-inner" id="timeline"></div></div>
+      <div class="tl-legend">
+        <span><span class="sw go"></span>Go code (decode, validate, respond)</span>
+        <span><span class="sw wait"></span>blocked waiting for the lock</span>
+        <span><span class="sw tx"></span>transaction: match + settle</span>
+        <span><span class="sw read"></span>read-only query</span>
+        <span><span class="sw clash"></span>overlaps another order on the same book</span>
+      </div>
+      <div class="verdict" id="verdict"></div>
+      <p class="note" id="explain"></p>
+      <p class="muted" style="font-size: var(--step--1)">Durations are illustrative units, not measurements.</p>
+    </div>
+  </div>
+
+  <div class="two">
+    <figure class="code">
+      <figcaption>internal/adapters/postgres/orders.go: LockBook</figcaption>
+<pre class="go"><span>// LockBook takes a transaction-scoped advisory lock keyed on the symbol. It
+// is released automatically at COMMIT/ROLLBACK.</span>
+func (r orderRepo) LockBook(ctx context.Context, symbol string) error {
+	_, err := r.q.Exec(ctx,
+		"SELECT pg_advisory_xact_lock(hashtext('orderbook:' || $1))", symbol)
+	return mapErr(err)
+}</pre>
+    </figure>
+    <div class="prose">
+      <h3>Why not a <code>sync.Mutex</code>?</h3>
+      <p>A Go mutex only coordinates goroutines <b>inside one process</b>. A fintech service runs several replicas behind a load balancer, and each would have its own mutex. Two replicas could then match AAPL orders at the same time.</p>
+      <p>A Postgres advisory lock lives in the database, which <b>every replica shares</b>. It also ends with the transaction, so a crashed process can't leave it held forever. The rule of thumb: <code>sync</code> protects memory, the database protects money.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 3. shutdown ======================= -->
+<section id="shutdown" aria-labelledby="s-title">
+  <div class="sec-head">
+    <span class="eyebrow">Concurrency · 3</span>
+    <h2 id="s-title">Channels, select and a clean shutdown</h2>
+  </div>
+  <div class="two">
+    <figure class="code">
+      <figcaption>cmd/api/main.go: run()</figcaption>
+<pre class="go">ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+defer stop()
+...
+defer pool.Close()
+...
+errCh := make(chan error, 1)
+go func() {
+	log.Info("listening", "addr", cfg.HTTPAddr)
+	errCh &lt;- srv.ListenAndServe()
+}()
+
+select {
+case err := &lt;-errCh:
+	if !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+case &lt;-ctx.Done():
+	log.Info("shutting down")
+}
+
+shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+return srv.Shutdown(shutdownCtx)</pre>
+    </figure>
+    <div class="panel">
+      <div class="panel-head"><h3>What happens on <code>docker stop</code></h3><span class="eyebrow">in order</span></div>
+      <div class="panel-body">
+        <ol class="steps">
+          <li><div><b>Two goroutines are running.</b> <span><code>main</code> is parked in <code>select</code>; the server goroutine is inside <code>ListenAndServe</code>, spawning request goroutines.</span></div></li>
+          <li><div><b>Docker sends SIGTERM.</b> <span><code>signal.NotifyContext</code> cancels <code>ctx</code>, so its <code>Done()</code> channel closes.</span></div></li>
+          <li><div><b>select wakes up</b> <span>on the <code>ctx.Done()</code> case. A <code>select</code> blocks until one of its channels is ready.</span></div></li>
+          <li><div><b>Shutdown stops accepting connections</b> <span>and waits for in-flight requests to finish, so an order mid-transaction commits instead of being cut off. After 10 seconds it gives up.</span></div></li>
+          <li><div><b>ListenAndServe returns ErrServerClosed</b> <span>into <code>errCh</code>. The channel has a buffer of 1, so that send never blocks even though nobody reads it now. An unbuffered channel here would leak the goroutine.</span></div></li>
+          <li><div><b>Deferred calls run in reverse order:</b> <span><code>cancel()</code>, then <code>pool.Close()</code>, then <code>stop()</code>. Last in, first out means the pool closes only after the server has drained.</span></div></li>
+        </ol>
+        <p class="note">In-flight requests keep running during shutdown because their contexts come from the server, not from <code>ctx</code>. Cancelling the signal context doesn't cancel them.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 4. context ======================= -->
+<section id="context" aria-labelledby="c-title">
+  <div class="sec-head">
+    <span class="eyebrow">Concurrency · 4</span>
+    <h2 id="c-title">context.Context carries deadlines and request data</h2>
+  </div>
+  <div class="two">
+    <div class="prose">
+      <p>Almost every function in the service takes <code>ctx context.Context</code> as its first argument. A context does two jobs:</p>
+      <p><b>Cancellation flows down.</b> If a client disconnects, <code>r.Context()</code> is cancelled. Every query passed that context is abandoned by pgx and the transaction rolls back, so no goroutine keeps working for a caller who has gone.</p>
+      <p><b>Request-scoped values ride along.</b> Middleware attaches the request ID logger and the authenticated user ID with <code>context.WithValue</code>, keyed by an unexported type so no other package can collide with or forge them.</p>
+      <p>Contexts form a tree. Deriving a child never changes the parent, so they are safe to share across goroutines.</p>
+    </div>
+    <div class="tree" aria-label="Context tree for one order request">
+      <div class="n"><code>r.Context()</code><span>created by net/http per request; cancelled if the client goes away</span></div>
+      <div class="kids">
+        <div class="n"><code>WithValue(ctxLogger, log.With("request_id", id))</code><span>middleware.go · withRequestID</span></div>
+        <div class="kids">
+          <div class="n"><code>WithValue(ctxUserID, id)</code><span>middleware.go · requireAuth, after the JWT checks out</span></div>
+          <div class="kids">
+            <div class="n"><code>TradingService.PlaceOrder(ctx, …)</code><span>passed unchanged through the app layer</span></div>
+            <div class="kids">
+              <div class="n"><code>tx.Exec(ctx, …)</code> · <code>tx.Query(ctx, …)</code><span>every SQL statement honours the cancellation</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="n"><code>context.WithTimeout(ctx, 5*time.Second)</code><span>db.go · Connect: startup ping gives up after 5s</span></div>
+    </div>
+  </div>
+  <figure class="code">
+    <figcaption>internal/adapters/http/middleware.go: unexported key type, typed accessor</figcaption>
+<pre class="go">type ctxKey int
+
+const (
+	ctxLogger ctxKey = iota
+	ctxUserID
+)
+
+func userID(ctx context.Context) string {
+	id, _ := ctx.Value(ctxUserID).(string) <span>// comma-ok type assertion: no panic if missing</span>
+	return id
+}</pre>
+  </figure>
+</section>
+
+<!-- ======================= 5. retry ======================= -->
+<section id="retry" aria-labelledby="r-title">
+  <div class="sec-head">
+    <span class="eyebrow">Concurrency · 5</span>
+    <h2 id="r-title">select with a timer: retrying deadlocks politely</h2>
+  </div>
+  <div class="prose">
+    <p>Two orders on different symbols can lock the same two users' balances in opposite orders. Postgres spots the cycle and aborts one transaction with error <code>40P01</code>. <code>WithTx</code> treats that as retryable: it waits a short, randomised backoff and runs the transaction body again. The wait is a <code>select</code>, so a cancelled request stops retrying immediately instead of sleeping.</p>
+  </div>
+  <div class="retry" aria-label="One deadlock and retry">
+    <div class="blk a"><b>attempt 1</b><span>deadlock_detected (40P01), rolled back</span></div>
+    <div class="blk w"><b>backoff</b><span>5ms × attempt + random jitter</span></div>
+    <div class="blk ok"><b>attempt 2</b><span>commits; caller never sees the deadlock</span></div>
+  </div>
+  <div class="two">
+    <figure class="code">
+      <figcaption>internal/adapters/postgres/store.go: WithTx</figcaption>
+<pre class="go">for attempt := 1; ; attempt++ {
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		return fn(&amp;Store{pool: s.pool, q: tx, inTx: true})
+	})
+	if err == nil || !isRetryable(err) || attempt == maxTxAttempts {
+		return err
+	}
+	backoff := time.Duration(attempt)*5*time.Millisecond +
+		time.Duration(rand.Int64N(int64(5*time.Millisecond)))
+	select {
+	case &lt;-time.After(backoff):
+	case &lt;-ctx.Done():
+		return ctx.Err()
+	}
+}</pre>
+    </figure>
+    <div class="prose">
+      <h3>The catch: closures may run twice</h3>
+      <p><code>fn</code> is a closure, and a retry calls it again. Anything it captured and mutated on the first attempt is still mutated. That's why <code>PlaceOrder</code> copies the validated order at the top of the closure:</p>
+      <figure class="code">
+        <figcaption>internal/app/trading_service.go</figcaption>
+<pre class="go">err = s.store.WithTx(ctx, func(tx Store) error {
+	<mark>order := *validated</mark> <span>// fresh copy per attempt, since WithTx may retry</span>
+	...</pre>
+      </figure>
+      <p>A unit test makes the in-memory store run every transaction twice to prove this holds: <code>TestPlaceOrderSurvivesTransactionRetry</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 6. testing ======================= -->
+<section id="testing" aria-labelledby="t-title">
+  <div class="sec-head">
+    <span class="eyebrow">Concurrency · 6</span>
+    <h2 id="t-title">Fan-out, fan-in: the concurrency test</h2>
+  </div>
+  <div class="prose">
+    <p><code>TestConcurrentMatchingInvariants</code> uses the three classic primitives together. <b>Goroutines</b> generate load, a <b>WaitGroup</b> waits for them, <b>atomics</b> count outcomes without a mutex, and a <b>buffered channel</b> carries errors back to the test goroutine, which is the only one allowed to call <code>t.Fatalf</code>.</p>
+  </div>
+  <div class="panel">
+    <div class="panel-body">
+      <div class="workers" aria-label="Eight worker goroutines">
+        <div class="worker">w0</div><div class="worker">w1</div><div class="worker">w2</div><div class="worker">w3</div>
+        <div class="worker">w4</div><div class="worker">w5</div><div class="worker">w6</div><div class="worker">w7</div>
+      </div>
+      <div class="funnel">
+        <div class="node"><b>placed.Add(1)</b><span><code>atomic.Int64</code>: lock-free counter</span></div>
+        <div class="node"><b>rejected.Add(1)</b><span>insufficient funds is an expected outcome</span></div>
+        <div class="node"><b>errs &lt;- err</b><span>channel with room for one error per worker, so no send ever blocks</span></div>
+        <div class="node"><b>wg.Wait()</b><span>then <code>close(errs)</code> and range over it</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="two">
+    <figure class="code">
+      <figcaption>internal/adapters/postgres/integration_test.go</figcaption>
+<pre class="go">var wg sync.WaitGroup
+var placed, rejected atomic.Int64
+errs := make(chan error, workers)
+for w := range workers {           <span>// Go 1.22: range over an int</span>
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		rng := mrand.New(mrand.NewPCG(uint64(w), 42))
+		for range ordersPerWorker {
+			...
+			_, err := svc.PlaceOrder(ctx, p)
+			switch {
+			case err == nil:
+				placed.Add(1)
+			case errors.Is(err, domain.ErrInsufficientFunds):
+				rejected.Add(1)
+			default:
+				errs &lt;- err
+				return
+			}
+		}
+	}()
+}
+wg.Wait()
+close(errs)
+for err := range errs {
+	t.Fatalf("PlaceOrder: %v", err)
+}</pre>
+    </figure>
+    <div class="prose">
+      <h3>Details worth copying</h3>
+      <p><b>Loop variables are per iteration since Go 1.22.</b> Each goroutine's <code>w</code> is its own copy. Before 1.22 all eight closures would share one <code>w</code>, a classic bug that needed <code>w := w</code>.</p>
+      <p><b>Deterministic randomness.</b> Each worker seeds its own <code>math/rand/v2</code> generator from its index, so a failing run can be reproduced. Workers never share a generator, so it needs no lock.</p>
+      <p><b>The race detector.</b> <code>make test</code> runs with <code>-race</code>, which instruments every memory access and fails the test if two goroutines touch the same variable without synchronisation. It catches races the invariants can't see.</p>
+      <p><b>Real deadlocks happen here,</b> and the test logs how many Postgres detected and the retry loop absorbed, while every money invariant still holds.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 7. language ======================= -->
+<section id="language" aria-labelledby="f-title">
+  <div class="sec-head">
+    <span class="eyebrow">Beyond concurrency</span>
+    <h2 id="f-title">Language features, as used here</h2>
+  </div>
+  <div class="cards">
+
+    <article class="card">
+      <div class="meta"><h3>Interfaces are satisfied implicitly</h3><span class="where">adapters/postgres/store.go</span></div>
+      <p>No <code>implements</code> keyword: a type satisfies an interface by having the methods. Both <code>*pgxpool.Pool</code> and <code>pgx.Tx</code> fit this small interface, so every repository works inside or outside a transaction. The <code>var _</code> line makes the compiler check the adapter still satisfies the port.</p>
+      <figure class="code"><figcaption>store.go</figcaption>
+<pre class="go">type querier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+}
+
+var _ app.Store = (*Store)(nil) <span>// compile-time check</span></pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>Struct embedding</h3><span class="where">adapters/http/middleware.go</span></div>
+      <p>Embedding <code>http.ResponseWriter</code> promotes all its methods. The recorder overrides only <code>WriteHeader</code> to remember the status for the access log; everything else passes straight through. This is composition, not inheritance.</p>
+      <figure class="code"><figcaption>middleware.go</figcaption>
+<pre class="go">type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>Errors are values</h3><span class="where">domain/errors.go · http/respond.go</span></div>
+      <p>Functions return errors; callers decide. <code>%w</code> wraps an error while keeping it inspectable. <code>errors.Is</code> walks the chain for a sentinel, and <code>errors.As</code> pulls out a typed error. The HTTP adapter maps them to status codes in one place.</p>
+      <figure class="code"><figcaption>errors.go · respond.go</figcaption>
+<pre class="go">ErrRefreshTokenReused = fmt.Errorf("%w: refresh token reuse detected", ErrInvalidToken)
+
+var ve *domain.ValidationError
+switch {
+case errors.As(err, &amp;ve):
+	<span>// 400 with ve.Field</span>
+case errors.Is(err, domain.ErrInsufficientFunds):
+	<span>// 422</span>
+case errors.Is(err, domain.ErrInvalidToken): <span>// also matches the reuse error</span>
+	<span>// 401</span>
+}</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>defer and recover</h3><span class="where">adapters/http/middleware.go</span></div>
+      <p><code>defer</code> runs when the function returns, even during a panic. A deferred <code>recover()</code> stops the panic and turns it into a 500. The domain panics deliberately when a money invariant breaks; pgx's deferred rollback then undoes the transaction.</p>
+      <figure class="code"><figcaption>middleware.go</figcaption>
+<pre class="go">defer func() {
+	if v := recover(); v != nil {
+		if v == http.ErrAbortHandler {
+			panic(v)
+		}
+		logger(r.Context(), s.log).Error("panic", "value", v, "stack", string(debug.Stack()))
+		writeError(w, http.StatusInternalServerError, "internal", "internal server error")
+	}
+}()</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>Functional options</h3><span class="where">app/options.go</span></div>
+      <p>An option is a function that edits a config struct. Constructors take <code>...Option</code>, so production code calls <code>NewAuthService(store, …)</code> while tests add <code>WithClock(fake)</code> to control token expiry. Adding an option never breaks existing callers.</p>
+      <figure class="code"><figcaption>options.go</figcaption>
+<pre class="go">type Option func(*options)
+
+func WithClock(now func() time.Time) Option {
+	return func(o *options) { o.now = now }
+}</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>Generics</h3><span class="where">adapters/postgres/orders.go</span></div>
+      <p><code>pgx.CollectRows</code> is generic over the row type: give it a mapper that returns <code>*domain.Order</code> and you get <code>[]*domain.Order</code>, type-checked. The built-in generic <code>min</code> and <code>max</code> (Go 1.21) appear in matching and pagination.</p>
+      <figure class="code"><figcaption>orders.go · matching.go</figcaption>
+<pre class="go">orders, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (*domain.Order, error) {
+	return scanOrder(row)
+})
+
+qty := taker.affordable(min(taker.Remaining(), maker.Remaining()), maker.Price)</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>Method values</h3><span class="where">adapters/http/account_handlers.go</span></div>
+      <p>A method bound to its receiver is an ordinary function value. Deposit and withdraw share one handler body by passing <code>s.account.Deposit</code> or <code>s.account.Withdraw</code> as the operation.</p>
+      <figure class="code"><figcaption>account_handlers.go</figcaption>
+<pre class="go">type transferFunc func(ctx context.Context, userID, asset string, amount int64) (*domain.Balance, error)
+
+func (s *Server) handleDeposit(w http.ResponseWriter, r *http.Request) {
+	s.transfer(w, r, s.account.Deposit)
+}</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>//go:embed</h3><span class="where">adapters/postgres/db.go</span></div>
+      <p>The SQL migrations are compiled into the binary as a read-only filesystem. That's how the API runs in a distroless image with no files besides itself: one binary carries its schema.</p>
+      <figure class="code"><figcaption>db.go</figcaption>
+<pre class="go">//go:embed migrations/*.sql
+var migrationsFS embed.FS
+
+files, err := fs.Glob(migrationsFS, "migrations/*.sql")</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>Struct tags</h3><span class="where">adapters/http/trading_handlers.go</span></div>
+      <p>Tags are metadata the <code>encoding/json</code> package reads by reflection. They name the JSON fields and drop zero values with <code>omitempty</code>, such as a market order's price. The DTOs live in the adapter, so the domain types stay free of JSON concerns.</p>
+      <figure class="code"><figcaption>trading_handlers.go</figcaption>
+<pre class="go">type orderResponse struct {
+	ID            string `json:"id"`
+	ClientOrderID string `json:"client_order_id,omitempty"`
+	Price         int64  `json:"price,omitempty"`
+	...
+}</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>Pattern routing (Go 1.22)</h3><span class="where">adapters/http/server.go</span></div>
+      <p>The standard library router matches methods and path wildcards, so no web framework is needed. A wrong method gets <code>405</code> automatically, and <code>r.PathValue</code> reads the wildcard.</p>
+      <figure class="code"><figcaption>server.go · trading_handlers.go</figcaption>
+<pre class="go">mux.Handle("DELETE /api/v1/orders/{id}", s.requireAuth(s.handleCancelOrder))
+
+o, err := s.trading.CancelOrder(r.Context(), userID(r.Context()), r.PathValue("id"))</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>Table-driven tests</h3><span class="where">domain/matching_test.go</span></div>
+      <p>The idiomatic Go test: a slice of cases, one loop, <code>t.Run</code> per case for a named subtest. <code>t.Helper()</code> points failures at the caller's line, and <code>t.Cleanup</code> runs the ledger check after every trading test.</p>
+      <figure class="code"><figcaption>matching_test.go</figcaption>
+<pre class="go">tests := []struct {
+	name       string
+	taker      *Order
+	makers     []*Order
+	wantFills  []fill
+	wantStatus OrderStatus
+}{ ... }
+for _, tt := range tests {
+	t.Run(tt.name, func(t *testing.T) { ... })
+}</pre></figure>
+    </article>
+
+    <article class="card">
+      <div class="meta"><h3>Build tags</h3><span class="where">*_test.go with //go:build integration</span></div>
+      <p>A build constraint on the first line keeps a file out of the build unless the tag is set. <code>go test ./...</code> stays fast and needs no database; <code>make test-integration</code> adds <code>-tags integration</code> to include the Postgres tests.</p>
+      <figure class="code"><figcaption>integration_test.go · e2e_test.go</figcaption>
+<pre class="go">//go:build integration
+
+package postgres_test</pre></figure>
+    </article>
+
+  </div>
+</section>
+
+<footer>
+  Every snippet is taken from this repository. "..." marks lines left out for space, a few long lines are re-wrapped, and some comments were added for this page. Companion page: <a href="order-matching.html">Matching Engine Explorer</a>.
+</footer>
+
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- tiny Go highlighter ----------
+  const KW = /\b(func|return|defer|if|else|for|range|var|const|type|struct|interface|switch|case|default|break|package|import|nil|map)\b/;
+  const CONC = /\b(go|select|chan)\b/;
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  document.querySelectorAll("pre.go").forEach((pre) => {
+    // Respect hand-placed <mark> by highlighting text nodes only.
+    const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      if (node.parentElement && node.parentElement.tagName === "SPAN") { node.parentElement.className = "c"; continue; }
+      const re = /(\/\/[^\n]*)|("(?:[^"\\\n]|\\.)*"|`[^`]*`)|\b([A-Za-z_]\w*)\b/g;
+      let out = "", last = 0, m;
+      const text = node.nodeValue;
+      while ((m = re.exec(text))) {
+        out += esc(text.slice(last, m.index));
+        if (m[1]) out += `<span class="c">${esc(m[1])}</span>`;
+        else if (m[2]) out += `<span class="s">${esc(m[2])}</span>`;
+        else if (CONC.test(m[3]) && m[3].match(CONC)[0] === m[3]) out += `<span class="g">${m[3]}</span>`;
+        else if (KW.test(m[3]) && m[3].match(KW)[0] === m[3]) out += `<span class="k">${m[3]}</span>`;
+        else out += esc(m[3]);
+        last = re.lastIndex;
+      }
+      out += esc(text.slice(last));
+      const tmp = document.createElement("span");
+      tmp.innerHTML = out;
+      node.replaceWith(...tmp.childNodes);
+    }
+  });
+
+  // ---------- lock timeline ----------
+  // Each request: arrives, runs Go code (1 unit), then either a transaction
+  // needing the book lock or a read with no lock, then responds (0.5 units).
+  const REQUESTS = [
+    { name: "POST /orders", sym: "AAPL", at: 0.0, tx: 4 },
+    { name: "POST /orders", sym: "AAPL", at: 0.4, tx: 4 },
+    { name: "POST /orders", sym: "MSFT", at: 0.6, tx: 4 },
+    { name: "GET /markets/AAPL/book", sym: "AAPL", at: 0.8, read: 1.5 },
+    { name: "POST /orders", sym: "AAPL", at: 1.2, tx: 4 },
+    { name: "POST /orders", sym: "MSFT", at: 1.4, tx: 4 },
+  ];
+  const GO = 1, RESP = 0.5;
+
+  function schedule(mode) {
+    const free = {}; // lock key -> time it becomes free
+    // Lock requests are served in the order goroutines ask for them.
+    const order = REQUESTS.map((r, i) => ({ ...r, i })).sort((a, b) => a.at - b.at);
+    const out = [];
+    for (const r of order) {
+      const segs = [{ k: "go", s: r.at, e: r.at + GO }];
+      let t = r.at + GO;
+      if (r.read) {
+        segs.push({ k: "read", s: t, e: t + r.read, label: "SELECT levels" });
+        t += r.read;
+      } else {
+        const key = mode === "global" ? "*" : r.sym;
+        let start = t;
+        if (mode !== "none") {
+          start = Math.max(t, free[key] || 0);
+          if (start > t) segs.push({ k: "wait", s: t, e: start });
+          free[key] = start + r.tx;
+        }
+        segs.push({ k: "tx", s: start, e: start + r.tx, label: "match " + r.sym });
+        t = start + r.tx;
+      }
+      segs.push({ k: "go", s: t, e: t + RESP });
+      out[r.i] = { ...r, segs, end: t + RESP };
+    }
+    // Mark transactions that overlap another one on the same symbol.
+    let clashes = 0;
+    const txs = out.map((r) => ({ r, seg: r.segs.find((s) => s.k === "tx") })).filter((x) => x.seg);
+    for (const a of txs) {
+      a.seg.clash = txs.some((b) => b !== a && b.r.sym === a.r.sym && b.seg.s < a.seg.e && a.seg.s < b.seg.e);
+      if (a.seg.clash) clashes++;
+    }
+    return { rows: out, clashes };
+  }
+
+  const SCALE = Math.ceil(Math.max(...["symbol", "global", "none"].flatMap((m) => schedule(m).rows.map((r) => r.end))));
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (id) => document.getElementById(id);
+  let raf = 0;
+
+  const EXPLAIN = {
+    symbol: { cls: "ok", text: "This is what the service does. AAPL orders queue behind each other because they compete for the same resting shares, while MSFT orders run at the same time on their own book. The order-book read never takes the lock, so market data stays fast even while matching is busy." },
+    global: { cls: "warn", text: "Correct, but slow. With one lock for the whole exchange, MSFT orders wait for AAPL orders they have nothing to do with. Throughput is capped at one match at a time no matter how many CPUs or replicas you add." },
+    none: { cls: "bad", text: "Fast and wrong. Overlapping AAPL transactions both read the same best ask before either writes, so both can fill against the same 100 shares: the book oversells and balances no longer add up. Remove LockBook in TradingService.PlaceOrder and run make test-integration to watch the invariant checks fail." },
+  };
+
+  function render(mode) {
+    cancelAnimationFrame(raf);
+    const { rows, clashes } = schedule(mode);
+    const T = SCALE; // same scale in every mode, so bars are comparable
+    const pct = (t) => ((t / T) * 100).toFixed(3) + "%";
+
+    let html = "";
+    rows.forEach((r, idx) => {
+      const segs = r.segs.map((s) => {
+        const cls = "seg " + s.k + (s.clash ? " clash" : "");
+        const label = s.label && s.e - s.s >= 2 ? `<span class="lbl">${s.label}</span>` : "";
+        return `<div class="${cls}" style="left:${pct(s.s)};width:${pct(s.e - s.s)}">${label}</div>`;
+      }).join("");
+      html += `<div class="lane"><div class="lane-label"><b>goroutine ${idx + 1} · ${r.sym}</b><span>${r.name}</span></div>` +
+        `<div class="track">${segs}<div class="cover"></div><div class="playhead"></div></div></div>`;
+    });
+    let ticks = "";
+    for (let t = 0; t <= T; t += 3) ticks += `<span style="left:${pct(t)}">${t}</span>`;
+    html += `<div class="axis"><span class="eyebrow" style="font-size:0.68rem">time →</span><div class="ticks">${ticks}</div></div>`;
+    $("timeline").innerHTML = html;
+
+    const aapl = Math.max(...rows.filter((r) => r.sym === "AAPL" && r.tx).map((r) => r.end));
+    const msft = Math.max(...rows.filter((r) => r.sym === "MSFT").map((r) => r.end));
+    const waited = rows.reduce((s, r) => s + r.segs.filter((x) => x.k === "wait").reduce((a, x) => a + x.e - x.s, 0), 0);
+    $("verdict").innerHTML =
+      `<div class="metric"><b>${fmt(aapl)}</b><span>last AAPL order done</span></div>` +
+      `<div class="metric"><b>${fmt(msft)}</b><span>last MSFT order done</span></div>` +
+      `<div class="metric"><b>${fmt(waited)}</b><span>total time goroutines spent blocked</span></div>` +
+      `<div class="metric ${clashes ? "bad" : "ok"}"><b>${clashes}</b><span>transactions racing on the same book</span></div>`;
+    const ex = EXPLAIN[mode];
+    $("explain").className = "note " + ex.cls;
+    $("explain").textContent = ex.text;
+
+    animate(T);
+  }
+
+  function fmt(n) { return (Math.round(n * 10) / 10).toString(); }
+
+  function animate(T) {
+    const covers = document.querySelectorAll("#timeline .cover");
+    const heads = document.querySelectorAll("#timeline .playhead");
+    const set = (t) => {
+      const p = Math.min(t / T, 1) * 100;
+      covers.forEach((c) => (c.style.left = p + "%"));
+      heads.forEach((h) => { h.style.left = p + "%"; h.hidden = p >= 100; });
+    };
+    if (reduceMotion) { set(T); return; }
+    const dur = 4200, t0 = performance.now();
+    const step = (now) => {
+      const k = Math.min((now - t0) / dur, 1);
+      set(k * T);
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    set(0);
+    raf = requestAnimationFrame(step);
+  }
+
+  const mode = () => document.querySelector('input[name="mode"]:checked').value;
+  document.querySelectorAll('input[name="mode"]').forEach((el) => el.addEventListener("change", () => render(mode())));
+  $("replay").addEventListener("click", () => render(mode()));
+  render("symbol");
+})();
+</script>
+</body>
+</html>
