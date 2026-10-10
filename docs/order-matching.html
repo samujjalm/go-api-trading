@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Matching Engine Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a trading-desk worksheet. Depth ladder on the left, order ticket and
+   narrated match log on the right, then the same flow traced through the Go code. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #e9edf3;
+  --line: #d5dce6;
+  --fg: #17202b;
+  --muted: #5a6779;
+  --accent: #2a55c9;
+  --accent-soft: rgba(42, 85, 201, 0.12);
+  --bid: #0c7f62;
+  --bid-soft: rgba(12, 127, 98, 0.13);
+  --ask: #c03f2b;
+  --ask-soft: rgba(192, 63, 43, 0.12);
+  --warn: #9a6a00;
+  --warn-soft: rgba(154, 106, 0, 0.13);
+
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --step--1: 0.8125rem;
+  --step-0: 0.9375rem;
+  --step-1: 1.125rem;
+  --step-2: 1.5rem;
+  --step-3: clamp(1.9rem, 4vw, 2.6rem);
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --surface: #161d27; --surface-2: #1e2834; --line: #2b3746;
+    --fg: #e3e9f1; --muted: #93a1b3; --accent: #86a2ff; --accent-soft: rgba(134, 162, 255, 0.16);
+    --bid: #3cc39a; --bid-soft: rgba(60, 195, 154, 0.16); --ask: #ff7d66; --ask-soft: rgba(255, 125, 102, 0.15);
+    --warn: #e2b44a; --warn-soft: rgba(226, 180, 74, 0.15);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --surface: #161d27; --surface-2: #1e2834; --line: #2b3746;
+  --fg: #e3e9f1; --muted: #93a1b3; --accent: #86a2ff; --accent-soft: rgba(134, 162, 255, 0.16);
+  --bid: #3cc39a; --bid-soft: rgba(60, 195, 154, 0.16); --ask: #ff7d66; --ask-soft: rgba(255, 125, 102, 0.15);
+  --warn: #e2b44a; --warn-soft: rgba(226, 180, 74, 0.15);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 var(--step-0)/1.55 var(--font-body);
+}
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-inline: 20px;
+  padding-block: 32px 64px;
+  display: grid;
+  gap: 40px;
+}
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: var(--step-3); letter-spacing: -0.01em; }
+h2 { font-size: var(--step-2); }
+h3 { font-size: var(--step-1); }
+p { margin: 0; }
+code, .mono { font-family: var(--font-data); font-size: 0.92em; }
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.eyebrow {
+  font-family: var(--font-data);
+  font-size: var(--step--1);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.muted { color: var(--muted); }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- header ---------- */
+header { display: grid; gap: 12px; max-width: 72ch; }
+header .lede { color: var(--muted); font-size: var(--step-1); line-height: 1.5; }
+.ticker {
+  display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline;
+  font-family: var(--font-data); font-size: var(--step--1); color: var(--muted);
+}
+.ticker strong { color: var(--fg); font-weight: 600; }
+
+/* ---------- desk ---------- */
+.desk { display: grid; gap: 20px; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 920px) { .desk { grid-template-columns: minmax(0, 1fr); } }
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.panel-head {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: baseline;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-body { padding: 14px 16px 16px; display: grid; gap: 14px; }
+
+/* depth ladder */
+.stats { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: var(--step--1); }
+.stats span b { font-family: var(--font-data); font-weight: 500; font-variant-numeric: tabular-nums; }
+.ladder { display: grid; gap: 2px; }
+.ladder-cols, .lvl {
+  display: grid;
+  grid-template-columns: 5.2rem 3.6rem minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+.ladder-cols { font-family: var(--font-data); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 8px 4px; }
+.lvl {
+  position: relative;
+  padding: 6px 8px;
+  border-radius: 4px;
+  min-height: 2.35rem;
+  isolation: isolate;
+}
+.lvl::before {
+  content: "";
+  position: absolute; inset: 0 auto 0 0;
+  width: var(--w, 0%);
+  border-radius: 4px;
+  z-index: -1;
+  transition: width 0.35s ease;
+}
+.lvl.ask::before { background: var(--ask-soft); }
+.lvl.bid::before { background: var(--bid-soft); }
+.lvl .px { font-family: var(--font-data); font-weight: 600; font-variant-numeric: tabular-nums; }
+.lvl.ask .px { color: var(--ask); }
+.lvl.bid .px { color: var(--bid); }
+.lvl .sz { font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; }
+.queue { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.chip {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  font-family: var(--font-data); font-size: 0.78rem;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  white-space: nowrap;
+  transition: background 0.2s, border-color 0.2s, opacity 0.3s;
+}
+.chip .who { font-family: var(--font-body); font-weight: 500; }
+.chip .seq { color: var(--muted); font-size: 0.7rem; }
+.chip.hit { border-color: var(--accent); background: var(--accent-soft); }
+.chip.gone { opacity: 0.45; text-decoration: line-through; }
+.chip.new { border-color: var(--warn); background: var(--warn-soft); }
+.spread {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px;
+  padding: 7px 8px;
+  margin-block: 4px;
+  border-block: 1px dashed var(--line);
+  font-family: var(--font-data); font-size: var(--step--1); color: var(--muted);
+}
+.side-label { font-family: var(--font-data); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 8px; }
+.side-label.ask { color: var(--ask); }
+.side-label.bid { color: var(--bid); }
+.empty-side { padding: 8px; color: var(--muted); font-size: var(--step--1); font-style: italic; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--step--1); color: var(--muted); }
+.legend .chip { font-size: 0.72rem; }
+
+/* order ticket */
+.right-col { display: grid; gap: 20px; min-width: 0; }
+form.ticket { display: grid; gap: 12px; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; }
+.field { display: grid; gap: 4px; flex: 1 1 7rem; min-width: 0; }
+.field label, .field .lbl { font-size: var(--step--1); color: var(--muted); }
+input[type="number"], select {
+  width: 100%;
+  font: 500 var(--step-0) var(--font-data);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 7px 9px;
+}
+select { font-family: var(--font-body); }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label {
+  flex: 1; text-align: center; cursor: pointer;
+  padding: 7px 10px;
+  font: 600 var(--step--1) var(--font-data); letter-spacing: 0.05em;
+  color: var(--muted);
+  background: var(--surface);
+}
+.seg label + input + label, .seg input + label ~ label { border-left: 1px solid var(--line); }
+.seg input:checked + label { color: var(--surface); }
+.seg input[value="BUY"]:checked + label { background: var(--bid); }
+.seg input[value="SELL"]:checked + label { background: var(--ask); }
+.seg input[value="LIMIT"]:checked + label,
+.seg input[value="MARKET"]:checked + label { background: var(--fg); }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button {
+  font: 600 var(--step--1) var(--font-body);
+  border-radius: 4px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.error { color: var(--ask); font-size: var(--step--1); min-height: 1.2em; }
+.presets { display: grid; gap: 8px; }
+.preset-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-list button { font-weight: 500; }
+
+/* match log */
+.log { display: grid; gap: 8px; max-height: 26rem; overflow-y: auto; padding-right: 4px; }
+.log-empty { color: var(--muted); font-size: var(--step--1); }
+.entry { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); gap: 10px; font-size: var(--step--1); line-height: 1.5; }
+.tag {
+  font-family: var(--font-data); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 3px; align-self: start; text-align: center;
+  background: var(--surface-2); color: var(--muted);
+}
+.tag.trade { background: var(--accent-soft); color: var(--accent); }
+.tag.stop { background: var(--warn-soft); color: var(--warn); }
+.tag.done { background: var(--bid-soft); color: var(--bid); }
+.tag.cancel { background: var(--ask-soft); color: var(--ask); }
+.entry.head { border-top: 1px solid var(--line); padding-top: 8px; }
+.entry.head:first-child { border-top: 0; padding-top: 0; }
+
+/* trade tape */
+.tape { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: var(--step--1); }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-family: var(--font-data); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td.r, th.r { text-align: right; }
+td.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.side-buy { color: var(--bid); font-weight: 600; }
+.side-sell { color: var(--ask); font-weight: 600; }
+
+/* ---------- explainer sections ---------- */
+section.explain { display: grid; gap: 18px; }
+section.explain > p { max-width: 70ch; color: var(--muted); }
+.rules { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+.rule { display: grid; gap: 6px; padding-top: 12px; border-top: 2px solid var(--fg); }
+.rule p { color: var(--muted); font-size: var(--step--1); }
+.rule .ex { font-family: var(--font-data); font-size: 0.78rem; color: var(--fg); background: var(--surface-2); padding: 6px 8px; border-radius: 4px; }
+
+.pipeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: step; }
+.pipeline li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 2.6rem minmax(0, 1fr) minmax(0, 15rem);
+  gap: 4px 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+}
+.pipeline li::before {
+  content: counter(step, decimal-leading-zero);
+  font-family: var(--font-data); font-size: var(--step--1); color: var(--muted);
+}
+.pipeline .what { display: grid; gap: 2px; min-width: 0; }
+.pipeline .what b { font-weight: 600; }
+.pipeline .what span { color: var(--muted); font-size: var(--step--1); }
+.pipeline .where { font-family: var(--font-data); font-size: 0.76rem; color: var(--accent); overflow-wrap: anywhere; }
+.pipeline li.tx { background: linear-gradient(to right, var(--accent-soft), transparent 70%); }
+@media (max-width: 640px) {
+  .pipeline li { grid-template-columns: 2.2rem minmax(0, 1fr); }
+  .pipeline .where { grid-column: 2; }
+}
+.tx-note { font-size: var(--step--1); color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.tx-swatch { width: 28px; height: 12px; border-radius: 2px; background: var(--accent-soft); border: 1px solid var(--accent); }
+
+.storage { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 820px) { .storage { grid-template-columns: minmax(0, 1fr); } }
+.storage .copy { display: grid; gap: 10px; color: var(--muted); max-width: 60ch; }
+.storage .copy b { color: var(--fg); }
+pre {
+  margin: 0;
+  font: 400 0.8rem/1.6 var(--font-data);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  overflow-x: auto;
+  color: var(--fg);
+}
+pre .c { color: var(--muted); }
+pre .k { color: var(--accent); }
+
+footer { color: var(--muted); font-size: var(--step--1); border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lvl::before, .chip { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">go-api-trading · docs</span>
+  <h1>Matching Engine Explorer</h1>
+  <p class="lede">A live AAPL order book that follows the same rules as the service's <code>domain.Match</code>. Send an order at it and watch, step by step, how it gets matched against resting orders, settled, and either rests on the book or is cancelled.</p>
+  <div class="ticker">
+    <span>Symbol <strong>AAPL</strong></span>
+    <span>Quote <strong>USD</strong></span>
+    <span>Prices stored as integer cents (<strong>189.50</strong> = <strong>18950</strong>)</span>
+    <span>Quantities in whole shares</span>
+  </div>
+</header>
+
+<div class="desk">
+  <section class="panel" aria-labelledby="book-title">
+    <div class="panel-head">
+      <h2 id="book-title" style="font-size: var(--step-1)">Order book</h2>
+      <div class="stats" id="stats"></div>
+    </div>
+    <div class="panel-body">
+      <div class="ladder" id="ladder" aria-live="off"></div>
+      <div class="legend">
+        <span>Each chip is one resting order, oldest on the left.</span>
+        <span><span class="chip"><span class="who">Alice</span> 100 <span class="seq">#1</span></span> = owner, shares left, arrival number</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="right-col">
+    <section class="panel" aria-labelledby="ticket-title">
+      <div class="panel-head">
+        <h2 id="ticket-title" style="font-size: var(--step-1)">Place an order</h2>
+        <button type="button" id="reset">Reset book</button>
+      </div>
+      <div class="panel-body">
+        <div class="presets">
+          <span class="eyebrow">Try a scenario (resets the book first)</span>
+          <div class="preset-list" id="presets"></div>
+        </div>
+        <form class="ticket" id="ticket" novalidate>
+          <div class="row">
+            <div class="field">
+              <label for="user">Trader</label>
+              <select id="user">
+                <option>Alice</option><option selected>Bob</option><option>Carol</option><option>Dave</option>
+              </select>
+            </div>
+            <div class="field">
+              <span class="lbl" id="side-lbl">Side</span>
+              <div class="seg" role="radiogroup" aria-labelledby="side-lbl">
+                <input type="radio" name="side" id="side-buy" value="BUY" checked><label for="side-buy">BUY</label>
+                <input type="radio" name="side" id="side-sell" value="SELL"><label for="side-sell">SELL</label>
+              </div>
+            </div>
+            <div class="field">
+              <span class="lbl" id="type-lbl">Type</span>
+              <div class="seg" role="radiogroup" aria-labelledby="type-lbl">
+                <input type="radio" name="type" id="type-limit" value="LIMIT" checked><label for="type-limit">LIMIT</label>
+                <input type="radio" name="type" id="type-market" value="MARKET"><label for="type-market">MARKET</label>
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field" id="price-field">
+              <label for="price">Limit price ($)</label>
+              <input type="number" id="price" step="0.01" min="0.01" value="190.00">
+            </div>
+            <div class="field">
+              <label for="qty">Quantity (shares)</label>
+              <input type="number" id="qty" step="1" min="1" value="60">
+            </div>
+            <div class="field" id="budget-field" hidden>
+              <label for="budget">Cash budget ($)</label>
+              <input type="number" id="budget" step="0.01" min="0.01" value="50000.00">
+            </div>
+          </div>
+          <div class="actions">
+            <button type="submit" class="primary" id="place">Place order</button>
+            <span class="error" id="error" role="alert"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="log-title">
+      <div class="panel-head">
+        <h2 id="log-title" style="font-size: var(--step-1)">What the matcher did</h2>
+        <span class="eyebrow">newest order at the bottom</span>
+      </div>
+      <div class="panel-body">
+        <div class="log" id="log" aria-live="polite"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<section class="panel" aria-labelledby="tape-title">
+  <div class="panel-head">
+    <h2 id="tape-title" style="font-size: var(--step-1)">Trade tape</h2>
+    <span class="eyebrow">what <code>GET /markets/AAPL/trades</code> would return</span>
+  </div>
+  <div class="panel-body tape">
+    <table>
+      <thead><tr><th>#</th><th class="r">Price</th><th class="r">Qty</th><th>Taker side</th><th>Buyer</th><th>Seller</th><th class="r">Notional</th></tr></thead>
+      <tbody id="tape"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="explain" aria-labelledby="rules-title">
+  <h2 id="rules-title">The matching rules</h2>
+  <p>Every incoming order (the <b>taker</b>) is matched against resting orders on the other side (the <b>makers</b>). These rules are enforced in <code>internal/domain/matching.go</code>, and the simulator above applies the same ones.</p>
+  <div class="rules">
+    <div class="rule">
+      <h3>Best price first</h3>
+      <p>A buy matches the lowest ask first; a sell matches the highest bid first. Matching walks outward level by level for as long as the price still crosses the taker's limit.</p>
+      <div class="ex">BUY 140 → 189.50 first, then 190.00</div>
+    </div>
+    <div class="rule">
+      <h3>Then first come, first served</h3>
+      <p>At the same price, the order that arrived earliest fills first. The service orders by an arrival sequence (<code>seq</code>) rather than a timestamp, because timestamps can tie.</p>
+      <div class="ex">190.00: Carol #3 fills before Alice #5</div>
+    </div>
+    <div class="rule">
+      <h3>The resting order sets the price</h3>
+      <p>Trades execute at the maker's price. A buyer willing to pay 190.50 who hits an ask at 189.50 pays 189.50, and the reserved difference goes back to their available cash.</p>
+      <div class="ex">bid 190.50 × 30, fills @ 189.50 → $30.00 released</div>
+    </div>
+    <div class="rule">
+      <h3>Market orders never rest</h3>
+      <p>A market order takes whatever liquidity exists and cancels any remainder (immediate-or-cancel). A market buy reserves a cash budget and stops when it can't afford one more share.</p>
+      <div class="ex">$25,000 budget → 100 @ 189.50 + 31 @ 190.00</div>
+    </div>
+    <div class="rule">
+      <h3>Limit remainders join the queue</h3>
+      <p>Whatever a limit order can't fill rests on the book at its limit price, behind every older order at that price.</p>
+      <div class="ex">SELL 90 @ 189.00 → 80 fill, 10 rest as new best ask</div>
+    </div>
+    <div class="rule">
+      <h3>No trading with yourself</h3>
+      <p>If the next maker belongs to the same user, matching stops and the rest of the new order is cancelled ("cancel newest"). That prevents wash trades and keeps the book from crossing.</p>
+      <div class="ex">Alice BUY @ 190.00 vs Alice's ask → cancelled</div>
+    </div>
+  </div>
+</section>
+
+<section class="explain" aria-labelledby="flow-title">
+  <h2 id="flow-title">One order through the service</h2>
+  <p>What happens, in order, when <code>POST /api/v1/orders</code> arrives. The highlighted steps run inside one database transaction, so the order, every trade and every balance change commit together or not at all.</p>
+  <span class="tx-note"><span class="tx-swatch" aria-hidden="true"></span>inside the transaction</span>
+  <ol class="pipeline">
+    <li><div class="what"><b>Decode and validate</b><span>JSON is decoded strictly, then <code>domain.NewOrder</code> checks symbol, side, type, price and quantity bounds.</span></div><div class="where">adapters/http/trading_handlers.go<br>domain/order.go · NewOrder</div></li>
+    <li class="tx"><div class="what"><b>Begin transaction</b><span>Retried automatically if Postgres aborts it for a deadlock, so the body must be safe to run twice.</span></div><div class="where">adapters/postgres/store.go · WithTx</div></li>
+    <li class="tx"><div class="what"><b>Lock the book for this symbol</b><span><code>pg_advisory_xact_lock</code> makes orders for the same symbol match one at a time. Other symbols proceed in parallel.</span></div><div class="where">adapters/postgres/orders.go · LockBook</div></li>
+    <li class="tx"><div class="what"><b>Idempotency check</b><span>If this user already sent the same <code>client_order_id</code>, return the original order instead of trading twice.</span></div><div class="where">app/trading_service.go · PlaceOrder</div></li>
+    <li class="tx"><div class="what"><b>Reserve funds</b><span>Cash for buys, shares for sells, moved from available to reserved. Not enough means <code>422 insufficient_funds</code> and everything rolls back.</span></div><div class="where">domain/balance.go · Reserve</div></li>
+    <li class="tx"><div class="what"><b>Fetch match candidates</b><span>Open orders on the other side that cross the limit, best price then lowest <code>seq</code>, 100 at a time.</span></div><div class="where">adapters/postgres/orders.go · MatchCandidates</div></li>
+    <li class="tx"><div class="what"><b>Match</b><span>The pure function that applies the rules above and produces trades. No I/O, so it is unit-tested with plain tables.</span></div><div class="where">domain/matching.go · Match</div></li>
+    <li class="tx"><div class="what"><b>Settle each trade</b><span>Four balances move: buyer pays cash and gets shares, seller gives shares and gets cash. Every change is written to the journal.</span></div><div class="where">domain/balance.go · Settle</div></li>
+    <li class="tx"><div class="what"><b>Finish the taker</b><span>Filled, rests on the book, or cancelled (market / self-trade). Any leftover reservation is released.</span></div><div class="where">domain/order.go · FinishMatching</div></li>
+    <li class="tx"><div class="what"><b>Commit</b><span>The book lock is released and the next order for this symbol can match.</span></div><div class="where">adapters/postgres/store.go</div></li>
+    <li><div class="what"><b>Respond</b><span><code>201 {order, trades}</code>, or <code>200</code> with <code>Idempotent-Replayed: true</code> for a retry.</span></div><div class="where">adapters/http/trading_handlers.go</div></li>
+  </ol>
+</section>
+
+<section class="explain" aria-labelledby="storage-title">
+  <h2 id="storage-title">Where the book actually lives</h2>
+  <div class="storage">
+    <div class="copy">
+      <p>The ladder above is drawn from memory, but the service keeps no in-memory book. <b>The book is the set of open rows in the <code>orders</code> table</b>: bids are open <code>BUY</code> rows, asks are open <code>SELL</code> rows.</p>
+      <p>A partial index covers only open orders, sorted by symbol, side, price and arrival sequence. That makes "best ask for AAPL" an index lookup no matter how many filled orders pile up.</p>
+      <p>This trades speed for simplicity. Each order costs a few milliseconds of database round trips, where an exchange's in-memory engine takes microseconds. In exchange, the database is always the source of truth and crash recovery needs no extra work.</p>
+    </div>
+<pre><span class="c">-- 0001_init.sql: index over resting orders only</span>
+<span class="k">CREATE INDEX</span> orders_book_idx
+  <span class="k">ON</span> orders (symbol, side, price, seq)
+  <span class="k">WHERE</span> status <span class="k">IN</span> ('NEW', 'PARTIALLY_FILLED');
+
+<span class="c">-- MatchCandidates for an incoming BUY</span>
+<span class="k">SELECT</span> ... <span class="k">FROM</span> orders
+ <span class="k">WHERE</span> symbol = $1 <span class="k">AND</span> side = 'SELL'
+   <span class="k">AND</span> status <span class="k">IN</span> ('NEW', 'PARTIALLY_FILLED')
+   <span class="k">AND</span> ($2::bigint <span class="k">IS NULL OR</span> price &lt;= $2)
+ <span class="k">ORDER BY</span> price <span class="k">ASC</span>, seq <span class="k">ASC</span>   <span class="c">-- price, then time</span>
+ <span class="k">LIMIT</span> 100 <span class="k">FOR UPDATE</span>;</pre>
+  </div>
+</section>
+
+<footer>
+  Runs entirely in your browser; nothing is sent to the API. The simulator applies the service's matching and reservation rules to a fixed starting book. Balances other than a market buy's budget are not modelled here; the service checks them before matching.
+</footer>
+
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- model (mirrors internal/domain) ----------
+  const START = [
+    // user, side, price (cents), qty — in arrival order, so index+1 is seq
+    ["Alice", "SELL", 18950, 100],
+    ["Bob",   "BUY",  18900, 60],
+    ["Carol", "SELL", 19000, 50],
+    ["Carol", "BUY",  18850, 80],
+    ["Alice", "SELL", 19000, 25],
+    ["Dave",  "SELL", 19100, 40],
+    ["Dave",  "BUY",  18900, 20],
+    ["Bob",   "BUY",  18800, 50],
+  ];
+
+  let state;
+  function reset() {
+    state = { seq: 0, orders: [], trades: [], log: [] };
+    for (const [user, side, price, qty] of START) {
+      const o = newOrder({ user, side, type: "LIMIT", price, qty, budget: 0 });
+      state.orders.push(o);
+    }
+    state.log = [];
+  }
+
+  function newOrder({ user, side, type, price, qty, budget }) {
+    const seq = ++state.seq;
+    const o = { id: "o" + seq, seq, user, side, type, price: type === "MARKET" ? 0 : price, qty, filled: 0, status: "NEW", reserved: 0 };
+    if (side === "SELL") o.reserved = qty;
+    else o.reserved = type === "LIMIT" ? price * qty : budget;
+    return o;
+  }
+
+  const remaining = (o) => o.qty - o.filled;
+  const isOpen = (o) => o.status === "NEW" || o.status === "PARTIALLY_FILLED";
+  const crosses = (taker, maker) =>
+    taker.type === "MARKET" || (taker.side === "BUY" ? taker.price >= maker.price : taker.price <= maker.price);
+
+  // Best price first, then lowest seq: the ORDER BY in MatchCandidates.
+  function resting(side) {
+    return state.orders
+      .filter((o) => o.side === side && isOpen(o))
+      .sort((a, b) => (side === "SELL" ? a.price - b.price : b.price - a.price) || a.seq - b.seq);
+  }
+
+  function fill(o, qty, price) {
+    if (o.side === "BUY") {
+      const improvement = o.type === "LIMIT" ? (o.price - price) * qty : 0;
+      o.reserved -= price * qty + improvement;
+    } else {
+      o.reserved -= qty;
+    }
+    o.filled += qty;
+    o.status = remaining(o) === 0 ? "FILLED" : "PARTIALLY_FILLED";
+  }
+
+  // A generator so the UI can render after every step.
+  function* place(params) {
+    const o = newOrder(params);
+    const sideWord = o.side === "BUY" ? "asks" : "bids";
+    const head = `${o.user} ${o.side} ${o.type === "MARKET" ? "MARKET" : "LIMIT @ " + px(o.price)} × ${o.qty}`;
+    let reserveText;
+    if (o.side === "SELL") reserveText = `Reserves ${o.qty} shares of AAPL so they can't be sold twice.`;
+    else if (o.type === "LIMIT") reserveText = `Reserves ${usd(o.reserved)} of cash (${o.qty} × ${px(o.price)}).`;
+    else reserveText = `A market buy has no price, so it reserves its whole budget of ${usd(o.reserved)} and can't spend more.`;
+    yield { kind: "order", tag: "new", text: `<b>${head}</b>. ${reserveText}` };
+
+    const makers = resting(o.side === "BUY" ? "SELL" : "BUY");
+    let selfTrade = false;
+    if (makers.length === 0) yield { kind: "info", tag: "info", text: `There are no resting ${sideWord} to trade against.` };
+
+    for (const m of makers) {
+      if (remaining(o) === 0) break;
+      if (!crosses(o, m)) {
+        yield { kind: "stop", tag: "stop", text: `The next ${o.side === "BUY" ? "ask" : "bid"} is ${px(m.price)}, ${o.side === "BUY" ? "above" : "below"} the limit of ${px(o.price)}, so matching stops.` };
+        break;
+      }
+      if (m.user === o.user) {
+        selfTrade = true;
+        yield { kind: "stop", tag: "stop", hit: m.id, text: `Next in line is ${m.user}'s own order (#${m.seq} at ${px(m.price)}). Self-trade prevention stops matching and will cancel the rest of the new order.` };
+        break;
+      }
+      let qty = Math.min(remaining(o), remaining(m));
+      if (o.side === "BUY") qty = Math.min(qty, Math.floor(o.reserved / m.price));
+      if (qty === 0) {
+        yield { kind: "stop", tag: "stop", text: `Only ${usd(o.reserved)} of budget is left, not enough for one share at ${px(m.price)}. Matching stops.` };
+        break;
+      }
+
+      const improvement = o.side === "BUY" && o.type === "LIMIT" ? (o.price - m.price) * qty : 0;
+      fill(o, qty, m.price);
+      fill(m, qty, m.price);
+      const buyer = o.side === "BUY" ? o.user : m.user;
+      const seller = o.side === "BUY" ? m.user : o.user;
+      state.trades.push({ n: state.trades.length + 1, price: m.price, qty, takerSide: o.side, buyer, seller });
+
+      let text = `Trade <b>${qty} @ ${px(m.price)}</b> with ${m.user} (#${m.seq}, oldest order at the best price). `;
+      text += m.status === "FILLED"
+        ? `${m.user}'s order is filled and leaves the book.`
+        : `${m.user} has ${remaining(m)} left and keeps their place at the front of ${px(m.price)}.`;
+      if (improvement > 0) text += ` ${o.user} bid ${px(o.price)} but pays the resting price, so ${usd(improvement)} of reserved cash goes back to available.`;
+      yield { kind: "trade", tag: "trade", hit: m.id, text };
+    }
+
+    // FinishMatching + release of any leftover reservation.
+    if (remaining(o) === 0) {
+      o.status = "FILLED";
+      let text = `${o.user}'s order is <b>FILLED</b>.`;
+      if (o.reserved > 0) text += ` The unused ${usd(o.reserved)} of budget is released.`;
+      o.reserved = 0;
+      yield { kind: "done", tag: "filled", text };
+    } else if (o.type === "MARKET" || selfTrade) {
+      o.status = "CANCELLED";
+      const why = selfTrade ? "self-trade prevention cancels it" : "market orders never rest on the book (immediate-or-cancel)";
+      const released = o.reserved > 0 ? ` ${o.side === "SELL" ? o.reserved + " shares" : usd(o.reserved)} of reservation is released.` : "";
+      o.reserved = 0;
+      yield { kind: "cancel", tag: "cancel", text: `The remaining ${remaining(o)} is <b>CANCELLED</b>: ${why}.${released}` };
+    } else {
+      state.orders.push(o);
+      const ahead = resting(o.side).filter((x) => x.price === o.price && x.id !== o.id).length;
+      yield { kind: "done", tag: "rests", hit: o.id, fresh: true, text: `The remaining <b>${remaining(o)} rests on the book</b> at ${px(o.price)}${ahead ? `, behind ${ahead} older order${ahead > 1 ? "s" : ""} at that price` : ""}. It is now a maker for future orders.` };
+    }
+  }
+
+  // ---------- formatting ----------
+  const nf = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const px = (c) => nf.format(c / 100);
+  const usd = (c) => "$" + nf.format(c / 100);
+
+  // ---------- rendering ----------
+  const $ = (id) => document.getElementById(id);
+
+  function levels(side, hitId) {
+    // Include an order that was just filled by this step so it can be shown struck through.
+    const orders = state.orders
+      .filter((o) => o.side === side && (isOpen(o) || o.id === hitId))
+      .sort((a, b) => b.price - a.price || a.seq - b.seq);
+    const map = new Map();
+    for (const o of orders) {
+      if (!map.has(o.price)) map.set(o.price, []);
+      map.get(o.price).push(o);
+    }
+    return [...map.entries()].map(([price, os]) => ({
+      price, orders: os, qty: os.filter(isOpen).reduce((s, o) => s + remaining(o), 0),
+    }));
+  }
+
+  function renderBook(step = {}) {
+    const asks = levels("SELL", step.hit);
+    const bids = levels("BUY", step.hit);
+    const max = Math.max(1, ...asks.map((l) => l.qty), ...bids.map((l) => l.qty));
+
+    const row = (l, cls) => {
+      const chips = l.orders.map((o) => {
+        let c = "chip";
+        if (o.id === step.hit) c += step.fresh ? " new" : isOpen(o) ? " hit" : " hit gone";
+        const shown = isOpen(o) ? remaining(o) : o.qty;
+        return `<span class="${c}"><span class="who">${o.user}</span> ${shown}<span class="seq">#${o.seq}</span></span>`;
+      }).join("");
+      return `<div class="lvl ${cls}" style="--w:${((l.qty / max) * 100).toFixed(1)}%"><span class="px">${px(l.price)}</span><span class="sz">${l.qty}</span><span class="queue">${chips}</span></div>`;
+    };
+
+    const bestAsk = resting("SELL")[0];
+    const bestBid = resting("BUY")[0];
+    let spread = "Book is one-sided";
+    if (bestAsk && bestBid) spread = `Spread ${px(bestAsk.price - bestBid.price)} · Mid ${px((bestAsk.price + bestBid.price) / 2)}`;
+
+    $("ladder").innerHTML =
+      `<div class="ladder-cols"><span>Price</span><span style="text-align:right">Size</span><span>Queue (time priority →)</span></div>` +
+      `<div class="side-label ask">Asks · sellers</div>` +
+      (asks.length ? asks.map((l) => row(l, "ask")).join("") : `<div class="empty-side">No asks</div>`) +
+      `<div class="spread"><span>${spread}</span><span>${bestBid ? "best bid " + px(bestBid.price) : ""}${bestBid && bestAsk ? " / " : ""}${bestAsk ? "best ask " + px(bestAsk.price) : ""}</span></div>` +
+      (bids.length ? bids.map((l) => row(l, "bid")).join("") : `<div class="empty-side">No bids</div>`) +
+      `<div class="side-label bid">Bids · buyers</div>`;
+
+    const open = state.orders.filter(isOpen).length;
+    $("stats").innerHTML =
+      `<span>Resting orders <b>${open}</b></span><span>Trades <b>${state.trades.length}</b></span>` +
+      `<span>Volume <b>${state.trades.reduce((s, t) => s + t.qty, 0)}</b></span>`;
+  }
+
+  function renderLog() {
+    const log = $("log");
+    if (!state.log.length) {
+      log.innerHTML = `<p class="log-empty">Nothing yet. Pick a scenario or place an order, and each step of the match is explained here.</p>`;
+      return;
+    }
+    log.innerHTML = state.log.map((e) =>
+      `<div class="entry${e.kind === "order" ? " head" : ""}"><span class="tag ${e.kind}">${e.tag}</span><p>${e.text}</p></div>`
+    ).join("");
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function renderTape() {
+    const rows = state.trades.slice().reverse().map((t) =>
+      `<tr><td class="num">${t.n}</td><td class="num r">${px(t.price)}</td><td class="num r">${t.qty}</td>` +
+      `<td class="${t.takerSide === "BUY" ? "side-buy" : "side-sell"}">${t.takerSide}</td>` +
+      `<td>${t.buyer}</td><td>${t.seller}</td><td class="num r">${usd(t.price * t.qty)}</td></tr>`
+    );
+    $("tape").innerHTML = rows.length ? rows.join("") : `<tr><td colspan="7" class="muted">No trades yet.</td></tr>`;
+  }
+
+  function renderAll(step) { renderBook(step); renderLog(); renderTape(); }
+
+  // ---------- driving the animation ----------
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const STEP_MS = reduceMotion ? 0 : 900;
+  let busy = false;
+
+  function setBusy(b) {
+    busy = b;
+    document.querySelectorAll("#ticket button, #presets button, #reset").forEach((el) => (el.disabled = b));
+  }
+
+  function run(params) {
+    if (busy) return;
+    setBusy(true);
+    const gen = place(params);
+    const tick = () => {
+      const { value, done } = gen.next();
+      if (done) { renderBook(); setBusy(false); return; }
+      state.log.push(value);
+      renderAll(value);
+      if (STEP_MS === 0) tick();
+      else setTimeout(tick, STEP_MS);
+    };
+    tick();
+  }
+
+  // ---------- form ----------
+  const form = $("ticket");
+  const val = (name) => form.querySelector(`input[name="${name}"]:checked`).value;
+
+  function syncFields() {
+    const market = val("type") === "MARKET";
+    $("price-field").hidden = market;
+    $("budget-field").hidden = !(market && val("side") === "BUY");
+  }
+  form.addEventListener("change", syncFields);
+
+  function setForm(p) {
+    $("user").value = p.user;
+    form.querySelector(`input[name="side"][value="${p.side}"]`).checked = true;
+    form.querySelector(`input[name="type"][value="${p.type}"]`).checked = true;
+    if (p.price) $("price").value = (p.price / 100).toFixed(2);
+    $("qty").value = p.qty;
+    if (p.budget) $("budget").value = (p.budget / 100).toFixed(2);
+    syncFields();
+  }
+
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const err = $("error");
+    err.textContent = "";
+    const type = val("type"), side = val("side");
+    const qty = Number($("qty").value);
+    const price = Math.round(Number($("price").value) * 100);
+    const budget = Math.round(Number($("budget").value) * 100);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 1_000_000) { err.textContent = "Quantity must be a whole number of shares, at least 1."; return; }
+    if (type === "LIMIT" && !(price >= 1 && price <= 1_000_000_000)) { err.textContent = "Enter a limit price above $0.00."; return; }
+    if (type === "MARKET" && side === "BUY" && !(budget >= 1)) { err.textContent = "A market buy needs a cash budget above $0.00."; return; }
+    run({ user: $("user").value, side, type, price, qty, budget });
+  });
+
+  $("reset").addEventListener("click", () => { reset(); renderAll(); });
+
+  // ---------- scenarios ----------
+  const SCENARIOS = [
+    { label: "Walk the book", p: { user: "Bob", side: "BUY", type: "MARKET", qty: 140, budget: 5_000_000 } },
+    { label: "Time priority + price improvement", p: { user: "Bob", side: "BUY", type: "LIMIT", price: 19050, qty: 130 } },
+    { label: "Partial fill, rest of order rests", p: { user: "Alice", side: "SELL", type: "LIMIT", price: 18900, qty: 90 } },
+    { label: "Market budget runs out", p: { user: "Dave", side: "BUY", type: "MARKET", qty: 200, budget: 2_500_000 } },
+    { label: "Self-trade prevented", p: { user: "Alice", side: "BUY", type: "LIMIT", price: 19000, qty: 50 } },
+    { label: "No cross, just rests", p: { user: "Carol", side: "BUY", type: "LIMIT", price: 18925, qty: 40 } },
+  ];
+  $("presets").innerHTML = SCENARIOS.map((s, i) => `<button type="button" data-i="${i}">${s.label}</button>`).join("");
+  $("presets").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-i]");
+    if (!b || busy) return;
+    const s = SCENARIOS[Number(b.dataset.i)];
+    reset();
+    setForm(s.p);
+    renderAll();
+    run(s.p);
+  });
+
+  reset();
+  syncFields();
+  renderAll();
+})();
+</script>
+</body>
+</html>
