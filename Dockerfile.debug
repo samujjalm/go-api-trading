@@ -1,0 +1,19 @@
+# Debug image: the API built without optimisations and run under Delve, so an
+# IDE (or the dlv CLI) can attach on :2345 and set breakpoints. Never ship this.
+FROM golang:1.26
+RUN go install github.com/go-delve/delve/cmd/dlv@v1.27.2
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+# -N disables optimisations and -l disables inlining, so every variable is
+# inspectable and breakpoints land on the line you set them on. No -trimpath:
+# keeping /src paths lets the IDE map them back to your checkout.
+RUN go build -gcflags="all=-N -l" -o /out/api ./cmd/api
+
+EXPOSE 8080 2345
+# --continue starts the API immediately; attach whenever you like.
+# --accept-multiclient lets you detach and re-attach without restarting.
+ENTRYPOINT ["dlv", "exec", "/out/api", "--headless", "--listen=:2345", "--api-version=2", "--accept-multiclient", "--continue", "--log-dest=/dev/null"]

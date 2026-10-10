@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach to API in Docker (make debug)",
+      "type": "go",
+      "request": "attach",
+      "mode": "remote",
+      "host": "127.0.0.1",
+      "port": 2345,
+      "substitutePath": [{ "from": "${workspaceFolder}", "to": "/src" }]
+    },
+    {
+      "name": "Run API locally (make db first)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/api",
+      "env": {
+        "DATABASE_URL": "postgres://trading:trading@localhost:5432/trading?sslmode=disable",
+        "JWT_SECRET": "dev-secret-change-me-dev-secret-change-me"
+      }
+    },
+    {
+      "name": "Debug tests in current package (incl. integration)",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${fileDirname}",
+      "buildFlags": "-tags=integration",
+      "env": {
+        "TEST_DATABASE_URL": "postgres://trading:trading@localhost:5432/trading_test?sslmode=disable"
+      }
+    }
+  ]
+}

@@ -43,6 +43,131 @@ curl $B/account/balances  -H "Authorization: Bearer $BOB"
 curl $B/account/movements -H "Authorization: Bearer $BOB"   # the journal behind the balance
 ```
 
+## Local development and debugging
+
+### Prerequisites
+
+| Tool | Needed for |
+|---|---|
+| Docker with Compose v2 (`docker compose`) | everything |
+| `make` | the shortcuts below (each target is a plain `docker compose` command, see `Makefile`) |
+| `curl`, `jq` | trying the API and filtering logs |
+| Go 1.26+ *(optional)* | running natively with `go run`; your editor's Go tooling |
+
+Run `make help` for every target.
+
+### Three ways to run the API
+
+| | Command | Use it when |
+|---|---|---|
+| **All in Docker** | `make up` | You just want the service running. Rebuild after code changes with `make up` again. |
+| **Native Go, DB in Docker** | `make run` | You have Go installed and want the fastest edit-and-rerun loop (Ctrl-C, `make run`). Starts Postgres, stops the API container, runs `go run ./cmd/api` against `localhost:5432`. |
+| **Under the debugger** | `make debug` | You want breakpoints. Runs the API inside Delve in Docker (port `8080` for HTTP, `2345` for the debugger). `make debug-stop` returns to the normal container. |
+
+All three use the same database, so data survives switching between them. The settings `make run` uses are in [`.env.example`](.env.example).
+
+### Debugging with breakpoints
+
+`make debug` builds `Dockerfile.debug`. That image compiles the API with optimisations and inlining turned off (`-gcflags="all=-N -l"`), so every variable can be inspected and breakpoints land on the exact line. It then runs the API under Delve. The API starts serving immediately, and you can attach and detach as often as you like.
+
+**VS Code** (with the Go extension). `.vscode/launch.json` is included:
+
+1. `make debug`
+2. Run and Debug → **Attach to API in Docker (make debug)**
+3. Set a breakpoint, e.g. in `handlePlaceOrder` in `internal/adapters/http/trading_handlers.go`, then send a request with curl.
+
+The config maps your checkout to `/src`, where the image built the code. If breakpoints show as unverified, the mapping is the first thing to check.
+
+**GoLand.** Run → Edit Configurations → **+ Go Remote**, host `localhost`, port `2345`, then Debug. The binary was built from `/src`. If breakpoints don't bind, add a path mapping from your project folder to `/src`.
+
+**Delve CLI** (no IDE needed, nothing to install):
+
+```sh
+make debug
+make dlv                     # opens Delve attached to the container
+(dlv) break internal/adapters/http/trading_handlers.go:102
+(dlv) continue               # now send an order with curl in another terminal
+(dlv) print req              # the decoded request body
+(dlv) next / step / stack    # step over, step in, show the call stack
+(dlv) goroutines             # every goroutine; requests each get their own
+(dlv) clear 1
+(dlv) exit -c                # detach and leave the API running
+```
+
+While the API is stopped at a breakpoint, its request (and any open transaction) waits too. Other requests keep being served.
+
+**Running natively.** After `make db`, choose **Run API locally (make db first)** in VS Code, or create a GoLand *Go Build* configuration for `./cmd/api` with the environment from `.env.example`.
+
+### Debugging tests
+
+```sh
+make test PKG=./internal/app/ RUN=TestPriceTimePriority        # run one test
+make test-integration RUN=TestConcurrentMatchingInvariants     # one integration test
+make debug-test PKG=./internal/domain/ RUN=TestCancel          # step through it in Delve
+(dlv) break domain.(*Order).Cancel
+(dlv) continue
+(dlv) print o.Status
+```
+
+`RUN` is a regular expression; `RUN='^TestCancel$'` matches exactly one test. With Go installed, the **Debug tests in current package** config in VS Code debugs the test file you have open, integration tests included (it needs `make db`).
+
+### Tracing a request through the logs
+
+Every response carries an `X-Request-ID` header, and every log line for that request has the same `request_id`. Send your own ID to find a request easily:
+
+```sh
+curl -i localhost:8080/api/v1/markets/AAPL/book -H 'X-Request-ID: trace-me-123'
+docker compose logs --no-log-prefix api | grep trace-me-123 | jq .
+
+# Every failed request:
+docker compose logs --no-log-prefix api | grep '^{' | jq -c 'select(.status >= 400) | {time, request_id, method, path, status}'
+```
+
+Use `api-debug` instead of `api` while `make debug` is running, or `make logs` to follow whichever is up. A `500` response never contains the cause. The matching `"level":"ERROR"` log line does, and a panic logs its full stack trace.
+
+### Inspecting the database
+
+`make psql` opens a shell on the dev database. Queries that answer the usual questions:
+
+```sql
+-- The order book for one symbol
+SELECT side, price, sum(quantity - filled_quantity) AS qty, count(*) AS orders
+  FROM orders WHERE symbol = 'AAPL' AND status IN ('NEW', 'PARTIALLY_FILLED')
+ GROUP BY side, price ORDER BY side DESC, price DESC;
+
+-- A user's balances, and the journal entries behind them
+SELECT b.asset, b.available, b.reserved
+  FROM balances b JOIN users u ON u.id = b.user_id WHERE u.email = 'bob@example.com';
+
+SELECT m.created_at, m.asset, m.kind, m.delta_available, m.delta_reserved, m.order_id, m.trade_id
+  FROM balance_movements m JOIN users u ON u.id = m.user_id
+ WHERE u.email = 'bob@example.com' ORDER BY m.seq;
+
+-- Recent trades
+SELECT executed_at, symbol, price, quantity, taker_side FROM trades ORDER BY seq DESC LIMIT 20;
+
+-- Sanity check: balances that don't match their journal (should be 0)
+SELECT count(*) FROM balances b WHERE (b.available, b.reserved) <>
+  (SELECT COALESCE(sum(delta_available), 0), COALESCE(sum(delta_reserved), 0)
+     FROM balance_movements m WHERE m.user_id = b.user_id AND m.asset = b.asset);
+```
+
+Integration tests write to a separate database, `trading_test`, so they never touch your dev data. Inspect it with `docker compose exec db psql -U trading -d trading_test`.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `port is already allocated` for 5432, 8080 or 2345 | Pick other host ports: `POSTGRES_PORT=5433 API_PORT=8081 DLV_PORT=2346 make up` (or `make debug`). For `make run`, pass the same `POSTGRES_PORT`. |
+| `make run`: `connection refused` | Postgres isn't up or is on another port. `make db` starts it; check `make ps`. |
+| `401 invalid_token` after a while | Access tokens last 15 minutes. Log in again or call `/auth/refresh`. |
+| `422 insufficient_funds` | Deposit first: `POST /api/v1/account/deposits`. Funds reserved by open orders don't count as available. |
+| Breakpoints never hit | Make sure you started `make debug`, not `make up`, and attached to port `2345`. In VS Code, check the `/src` path mapping. |
+| Integration tests fail with `database "trading_test" does not exist` | It's created only when the Postgres volume is first made. Run `docker compose exec db createdb -U trading trading_test`, or `make clean` to start fresh. |
+| Natively run tests say `TEST_DATABASE_URL not set; skipping` | Export the URL from `.env.example`, or use `make test-integration`, which runs in Docker. |
+| Open orders became `CANCELLED` after upgrading | Expected: migration `0002_balances.sql` cancels orders placed before balances existed, because no funds back them. |
+| Start from a clean slate | `make clean` deletes all containers and data; then `make up`. |
+
 ## API
 
 | Method | Path | Auth | Purpose |
