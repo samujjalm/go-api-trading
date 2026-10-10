@@ -1,0 +1,46 @@
+# --- Go build output ---
+/bin/
+/dist/
+/api
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# --- Test & profiling artifacts ---
+coverage.out
+coverage.html
+*.coverprofile
+*.prof
+*.pprof
+cpu.out
+mem.out
+trace.out
+
+# Go workspace files are per-developer
+go.work
+go.work.sum
+
+# Vendored deps (we use the module cache; remove this line if you vendor)
+/vendor/
+
+# --- Secrets & local config ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Editors & OS ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Claude Code personal settings (shared settings.json stays tracked) ---
+.claude/settings.local.json

@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: trading
+      POSTGRES_PASSWORD: trading
+      POSTGRES_DB: trading
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro # creates trading_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading -d trading"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: postgres://trading:trading@db:5432/trading?sslmode=disable
+      # Dev-only secret. In production this comes from a secret manager.
+      JWT_SECRET: dev-secret-change-me-dev-secret-change-me
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_TTL: 168h
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Runs the Go toolchain in a container, so no local Go install is needed.
+  # Debian-based image because the race detector (-race) needs cgo.
+  test:
+    profiles: ["tools"]
+    image: golang:1.26
+    working_dir: /src
+    volumes:
+      - .:/src
+      - gomod:/go/pkg/mod
+      - gobuild:/root/.cache/go-build
+    environment:
+      TEST_DATABASE_URL: postgres://trading:trading@db:5432/trading_test?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  gomod:
+  gobuild:
